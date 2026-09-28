@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Real-Time Logging vs Back-Billing</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #e8edf2;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+    font-size: 13px;
+    color: #333;
+    padding: 24px 16px 40px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  /* ── Header ── */
+  .page-header {
+    background: #1e4da1;
+    border-radius: 4px 4px 0 0;
+    padding: 12px 20px;
+    width: 100%; max-width: 960px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .page-header h1 { font-size: 14px; font-weight: 700; color: #fff; }
+  .step-badge { font-size: 11px; font-weight: 600; background: rgba(255,255,255,0.18); color: #fff; padding: 3px 12px; border-radius: 10px; }
+
+  .page-sub {
+    background: #c8d8e8; border: 1px solid #a8b8cc;
+    border-top: none; border-radius: 0 0 4px 4px;
+    padding: 9px 20px; width: 100%; max-width: 960px;
+    font-size: 12px; color: #333; line-height: 1.5;
+    margin-bottom: 20px;
+  }
+
+  /* ── Main layout ── */
+  .walkthrough {
+    display: flex; gap: 20px;
+    width: 100%; max-width: 960px;
+    align-items: flex-start;
+  }
+
+  /* ── Left: instruction panel ── */
+  .instruction-panel {
+    flex: 0 0 260px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+
+  .instruction-card {
+    background: #fff; border: 1px solid #bbb;
+    border-radius: 4px; overflow: hidden;
+  }
+  .inst-header {
+    padding: 9px 14px;
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px; font-weight: 700; color: #fff;
+  }
+  .inst-header.neutral { background: #1e4da1; }
+  .inst-header.good    { background: #1a5a1a; }
+  .inst-header.bad     { background: #8a2020; }
+  .inst-header.warning { background: #b06000; }
+
+  .inst-num {
+    background: rgba(255,255,255,0.25);
+    width: 22px; height: 22px; border-radius: 50%;
+    font-size: 11px; font-weight: 900;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+
+  .inst-body {
+    padding: 14px; font-size: 12px; color: #222; line-height: 1.65;
+  }
+  .inst-body strong { color: #1e4da1; }
+  .inst-body strong.green { color: #1a5a1a; }
+  .inst-body strong.red   { color: #8a2020; }
+
+  .inst-tip {
+    background: #fff8dc; border: 1px solid #e0c060;
+    border-radius: 3px; padding: 7px 10px;
+    font-size: 11px; color: #5a4000;
+    line-height: 1.5; margin-top: 10px;
+  }
+
+  .nav-btns { display: flex; gap: 8px; }
+  .nav-btn {
+    flex: 1; padding: 8px; border-radius: 4px;
+    border: 1px solid transparent;
+    font-size: 12px; font-weight: 600; cursor: pointer; text-align: center;
+  }
+  .nav-btn.prev { background: #e8e8e8; color: #555; border-color: #bbb; }
+  .nav-btn.prev:hover { background: #ddd; }
+  .nav-btn.next { background: #1e4da1; color: #fff; border-color: #1a3d80; }
+  .nav-btn.next:hover { background: #1a3d80; }
+  .nav-btn:disabled { opacity: 0.35; cursor: default; }
+
+  .progress-dots { display: flex; justify-content: center; gap: 6px; }
+  .pdot { width: 8px; height: 8px; border-radius: 50%; background: #ccc; cursor: pointer; transition: background 0.2s; }
+  .pdot.active { background: #1e4da1; }
+  .pdot.done   { background: #1a5a1a; }
+
+  /* ── Right: two panels stacked ── */
+  .panels-col {
+    flex: 1; min-width: 0;
+    display: flex; flex-direction: column; gap: 14px;
+  }
+
+  /* ── Each scenario panel ── */
+  .scenario-panel { border-radius: 4px; overflow: hidden; border: 1px solid #bbb; }
+
+  .panel-header {
+    padding: 7px 14px;
+    font-size: 11px; font-weight: 700;
+    letter-spacing: 0.07em; text-transform: uppercase;
+    display: flex; align-items: center; gap: 8px; color: #fff;
+  }
+  .panel-header.good { background: #1a5a1a; }
+  .panel-header.bad  { background: #8a2020; }
+  .panel-header .hdot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .hdot-green { background: #80e080; }
+  .hdot-red   { background: #ff8080; }
+
+  .panel-body { background: #fff; }
+
+  /* Time-of-day indicator */
+  .time-indicator {
+    background: #f7f7f7; border-bottom: 1px solid #e0e0e0;
+    padding: 6px 14px;
+    display: flex; align-items: center; gap: 8px;
+    font-size: 11px; color: #555;
+  }
+  .clock-icon { font-size: 14px; }
+  .time-val { font-weight: 700; color: #1e4da1; font-size: 13px; }
+  .time-label { color: #888; }
+
+  /* Entry table */
+  .entry-table { width: 100%; border-collapse: collapse; }
+  .entry-table thead tr { background: #f5f5f5; border-bottom: 1px solid #ddd; }
+  .entry-table th {
+    font-size: 10px; font-weight: 700; color: #666;
+    padding: 6px 12px; text-align: left;
+    letter-spacing: 0.05em; text-transform: uppercase;
+  }
+  .entry-table th:last-child { text-align: right; }
+  .entry-table td {
+    font-size: 11.5px; color: #333;
+    padding: 8px 12px; border-bottom: 1px solid #f0f0f0;
+    vertical-align: middle;
+  }
+  .entry-table td:last-child { text-align: right; font-weight: 600; }
+  .entry-table .total-row td {
+    background: #f7f7f7; font-weight: 700;
+    border-top: 1px solid #ddd; border-bottom: none; font-size: 12px;
+  }
+
+  /* New entry animation */
+  .entry-row.new-entry {
+    animation: slideIn 0.4s ease;
+    background: #f0faf0;
+  }
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateY(-6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .entry-row.missing {
+    opacity: 0.35;
+    text-decoration: line-through;
+    text-decoration-color: #e05050;
+    color: #999;
+  }
+
+  /* Status tag */
+  .status-tag {
+    display: inline-block; font-size: 9px; font-weight: 700;
+    padding: 2px 7px; border-radius: 10px; margin-left: 6px;
+    vertical-align: middle;
+  }
+  .tag-live    { background: #e8f5e8; color: #1a5a1a; border: 1px solid #70b870; }
+  .tag-missing { background: #fde8e8; color: #8a2020; border: 1px solid #e08080; }
+  .tag-guessed { background: #fff3e0; color: #7a5000; border: 1px solid #e0a840; }
+
+  /* Empty state */
+  .empty-state {
+    padding: 20px 14px;
+    text-align: center;
+    font-size: 11.5px; color: #aaa; font-style: italic;
+  }
+
+  /* Panel footer note */
+  .panel-note {
+    padding: 9px 14px; font-size: 12px; font-weight: 500;
+    line-height: 1.5; color: #fff;
+  }
+  .panel-note.good { background: #1a5a1a; }
+  .panel-note.bad  { background: #8a2020; }
+  .panel-note.warning { background: #b06000; }
+
+  /* Total hours badge */
+  .hours-badge {
+    display: inline-block;
+    font-size: 13px; font-weight: 700;
+    padding: 2px 10px; border-radius: 4px; margin-left: 6px;
+  }
+  .badge-green { background: rgba(255,255,255,0.2); color: #fff; }
+  .badge-red   { background: rgba(255,255,255,0.2); color: #ffcccc; }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>Real-Time Logging vs. Back-Billing</h1>
+  <span class="step-badge" id="stepBadge">Step 1 of 6</span>
+</div>
+<div class="page-sub">
+  👁 <strong>Follow-along demo</strong> — click <strong>Next</strong> to move through the workday. Watch what happens in each system as the day progresses. No action needed on your part.
+</div>
+
+<div class="walkthrough">
+
+  <!-- Instruction panel -->
+  <div class="instruction-panel">
+    <div class="instruction-card">
+      <div class="inst-header neutral" id="instHeader">
+        <div class="inst-num" id="instNum">1</div>
+        <span id="instTitle">The Workday Begins</span>
+      </div>
+      <div class="inst-body" id="instBody">
+        It is <strong>9:00 AM</strong> and your workday has just started.<br><br>
+        Both scenarios begin the same way — you have tasks to complete and time to log.<br><br>
+        Watch what happens to the two Bill4Time entries lists as the day progresses.
+        <div class="inst-tip">💡 The top panel shows the right way. The bottom shows what happens when you wait until end of day.</div>
+      </div>
+    </div>
+
+    <div class="nav-btns">
+      <button class="nav-btn prev" id="prevBtn" onclick="changeStep(-1)" disabled>← Back</button>
+      <button class="nav-btn next" id="nextBtn" onclick="changeStep(1)">Next →</button>
+    </div>
+
+    <div class="progress-dots">
+      <div class="pdot active" onclick="goToStep(0)"></div>
+      <div class="pdot" onclick="goToStep(1)"></div>
+      <div class="pdot" onclick="goToStep(2)"></div>
+      <div class="pdot" onclick="goToStep(3)"></div>
+      <div class="pdot" onclick="goToStep(4)"></div>
+      <div class="pdot" onclick="goToStep(5)"></div>
+    </div>
+  </div>
+
+  <!-- Two panels -->
+  <div class="panels-col">
+
+    <!-- GOOD panel -->
+    <div class="scenario-panel">
+      <div class="panel-header good">
+        <div class="hdot hdot-green"></div>
+        Real-Time Logging — entries logged as each task is completed
+      </div>
+      <div class="panel-body">
+        <div class="time-indicator">
+          <span class="clock-icon">🕐</span>
+          <span class="time-val" id="goodTime">9:00 AM</span>
+          <span class="time-label" id="goodStatus">— Workday starting</span>
+        </div>
+        <table class="entry-table">
+          <thead>
+            <tr>
+              <th>Activity</th>
+              <th>Client</th>
+              <th>Logged at</th>
+              <th>Hrs</th>
+            </tr>
+          </thead>
+          <tbody id="goodEntries">
+            <tr><td colspan="4"><div class="empty-state">No entries yet — workday just started</div></td></tr>
+          </tbody>
+        </table>
+        <div class="panel-note good" id="goodNote" style="display:none;"></div>
+      </div>
+    </div>
+
+    <!-- BAD panel -->
+    <div class="scenario-panel">
+      <div class="panel-header bad">
+        <div class="hdot hdot-red"></div>
+        Back-Billing — nothing logged until end of day
+      </div>
+      <div class="panel-body">
+        <div class="time-indicator">
+          <span class="clock-icon">🕐</span>
+          <span class="time-val" id="badTime">9:00 AM</span>
+          <span class="time-label" id="badStatus">— Workday starting</span>
+        </div>
+        <table class="entry-table">
+          <thead>
+            <tr>
+              <th>Activity</th>
+              <th>Client</th>
+              <th>Logged at</th>
+              <th>Hrs</th>
+            </tr>
+          </thead>
+          <tbody id="badEntries">
+            <tr><td colspan="4"><div class="empty-state">No entries yet — workday just started</div></td></tr>
+          </tbody>
+        </table>
+        <div class="panel-note bad" id="badNote" style="display:none;"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  const steps = [
+    {
+      num:'1', headerClass:'neutral', title:'The Workday Begins',
+      body:`It is <strong>9:00 AM</strong> and your workday has just started.<br><br>Both scenarios begin the same way — you have tasks to complete and time to log.<br><br>Watch what happens to the two Bill4Time entry lists as the day progresses.`,
+      tip:'💡 The top panel shows the right way. The bottom shows what happens when you wait until end of day.',
+      goodTime:'9:00 AM', goodStatus:'— Workday starting',
+      badTime:'9:00 AM',  badStatus:'— Workday starting',
+      goodEntries: null, badEntries: null,
+      goodNote: null, badNote: null
+    },
+    {
+      num:'2', headerClass:'good', title:'10:30 AM — First Task Done',
+      body:`You just finished a <strong>Medical Records Review</strong> and it took 1.5 hours.<br><br><strong class="green">Real-time:</strong> The entry is logged immediately — activity, client, time, all accurate.<br><br><strong class="red">Back-billing:</strong> Nothing is logged. The task happened but there is no record of it yet.`,
+      tip:'💡 Logging immediately means the details are fresh and accurate.',
+      goodTime:'10:30 AM', goodStatus:'— Entry logged right after completing task',
+      badTime:'10:30 AM',  badStatus:'— No entries logged yet',
+      goodEntries: [
+        { activity:'Medical Record Request/Follow Up', client:'SLS Operations', time:'10:32 AM', hrs:'1.50', cls:'new-entry' }
+      ],
+      badEntries: null,
+      goodNote: null, badNote: null
+    },
+    {
+      num:'3', headerClass:'good', title:'12:15 PM — Two More Tasks Done',
+      body:`You completed a <strong>Client Intake</strong> (1.00 hr) and <strong>Attorney Correspondence</strong> (0.75 hr) before lunch.<br><br><strong class="green">Real-time:</strong> Both entries logged straight away with precise times.<br><br><strong class="red">Back-billing:</strong> Still nothing logged. These tasks are now just memories.`,
+      tip:'💡 Three tasks done by lunch — all captured in real time on the good side.',
+      goodTime:'12:15 PM', goodStatus:'— Heading to lunch, 3 entries logged',
+      badTime:'12:15 PM',  badStatus:'— Still no entries logged',
+      goodEntries: [
+        { activity:'Medical Record Request/Follow Up', client:'SLS Operations',   time:'10:32 AM', hrs:'1.50', cls:'' },
+        { activity:'Client Intake Interview & Notes',  client:'Hernandez, Maria', time:'11:45 AM', hrs:'1.00', cls:'new-entry' },
+        { activity:'Attorney Correspondence',          client:'Thompson, James',  time:'12:14 PM', hrs:'0.75', cls:'new-entry' }
+      ],
+      badEntries: null,
+      goodNote: null, badNote: null
+    },
+    {
+      num:'4', headerClass:'good', title:'3:00 PM — Afternoon Tasks Done',
+      body:`After lunch you completed a <strong>Demand Letter Review</strong> (1.75 hrs) and <strong>Court Filing Preparation</strong> (0.75 hr).<br><br><strong class="green">Real-time:</strong> Both logged immediately. Day total building accurately.<br><br><strong class="red">Back-billing:</strong> Five tasks completed — zero entries in Bill4Time.`,
+      tip:'💡 Five tasks, five accurate entries — nothing left to remember.',
+      goodTime:'3:00 PM', goodStatus:'— 5 entries, 5.75 hrs logged so far',
+      badTime:'3:00 PM',  badStatus:'— Still nothing logged all day',
+      goodEntries: [
+        { activity:'Medical Record Request/Follow Up', client:'SLS Operations',   time:'10:32 AM', hrs:'1.50', cls:'' },
+        { activity:'Client Intake Interview & Notes',  client:'Hernandez, Maria', time:'11:45 AM', hrs:'1.00', cls:'' },
+        { activity:'Attorney Correspondence',          client:'Thompson, James',  time:'12:14 PM', hrs:'0.75', cls:'' },
+        { activity:'Draft Demand Letter – Revisions',  client:'Patel, Rajesh',    time:'2:48 PM',  hrs:'1.75', cls:'new-entry' },
+        { activity:'Court Filing Preparation',         client:'SLS Operations',   time:'2:59 PM',  hrs:'0.75', cls:'new-entry' }
+      ],
+      badEntries: null,
+      goodNote: null, badNote: null
+    },
+    {
+      num:'5', headerClass:'bad', title:'5:00 PM — End of Day',
+      body:`The workday is over.<br><br><strong class="green">Real-time:</strong> All 5 entries are already saved with precise times. Day is done — close and go.<br><br><strong class="red">Back-billing:</strong> Now trying to remember everything from 9 AM. One vague entry is created for the whole day — two tasks are forgotten entirely.`,
+      tip:'⚠ Back-billing means guessed times, forgotten tasks, and hours that may not hold up to review.',
+      goodTime:'5:00 PM', goodStatus:'— Day complete, all entries saved ✓',
+      badTime:'5:00 PM',  badStatus:'— Scrambling to remember the whole day',
+      goodEntries: [
+        { activity:'Medical Record Request/Follow Up', client:'SLS Operations',   time:'10:32 AM', hrs:'1.50', cls:'' },
+        { activity:'Client Intake Interview & Notes',  client:'Hernandez, Maria', time:'11:45 AM', hrs:'1.00', cls:'' },
+        { activity:'Attorney Correspondence',          client:'Thompson, James',  time:'12:14 PM', hrs:'0.75', cls:'' },
+        { activity:'Draft Demand Letter – Revisions',  client:'Patel, Rajesh',    time:'2:48 PM',  hrs:'1.75', cls:'' },
+        { activity:'Court Filing Preparation',         client:'SLS Operations',   time:'2:59 PM',  hrs:'0.75', cls:'' }
+      ],
+      badEntries: [
+        { activity:'Medical records + misc tasks (est.)', client:'SLS Operations', time:'5:04 PM', hrs:'5.00', cls:'new-entry', tag:'guessed' },
+        { activity:'Client Intake Interview & Notes',     client:'—',              time:'—',        hrs:'—',    cls:'missing',  tag:'missing' },
+        { activity:'Attorney Correspondence',             client:'—',              time:'—',        hrs:'—',    cls:'missing',  tag:'missing' }
+      ],
+      goodNote: '✓ 5 entries — 5.75 billable hrs — precise times — every client attributed correctly.',
+      badNote:  '✕ 1 vague entry — 5.00 hrs estimated — 2 tasks forgotten — 0.75 hrs of billable work lost.'
+    },
+    {
+      num:'6', headerClass:'neutral', title:'The Difference It Makes',
+      body:`<strong class="green">Real-time logging</strong> captured every task accurately — correct clients, precise times, nothing missed.<br><br><strong class="red">Back-billing</strong> lost 0.75 hrs of billable work, merged five tasks into one vague entry, and guessed at the time.<br><br>The rule is simple: <strong>log each entry as soon as you finish the task.</strong>`,
+      tip:'💡 If a judge reviewed these entries, which set would you want them to see?',
+      goodTime:'End of Day', goodStatus:'— 5.75 hrs logged correctly',
+      badTime:'End of Day',  badStatus:'— 5.00 hrs logged (0.75 hrs lost)',
+      goodEntries: [
+        { activity:'Medical Record Request/Follow Up', client:'SLS Operations',   time:'10:32 AM', hrs:'1.50', cls:'' },
+        { activity:'Client Intake Interview & Notes',  client:'Hernandez, Maria', time:'11:45 AM', hrs:'1.00', cls:'' },
+        { activity:'Attorney Correspondence',          client:'Thompson, James',  time:'12:14 PM', hrs:'0.75', cls:'' },
+        { activity:'Draft Demand Letter – Revisions',  client:'Patel, Rajesh',    time:'2:48 PM',  hrs:'1.75', cls:'' },
+        { activity:'Court Filing Preparation',         client:'SLS Operations',   time:'2:59 PM',  hrs:'0.75', cls:'' }
+      ],
+      badEntries: [
+        { activity:'Medical records + misc tasks (est.)', client:'SLS Operations', time:'5:04 PM', hrs:'5.00', cls:'', tag:'guessed' },
+        { activity:'Client Intake Interview & Notes',     client:'—',              time:'—',        hrs:'—',    cls:'missing',  tag:'missing' },
+        { activity:'Attorney Correspondence',             client:'—',              time:'—',        hrs:'—',    cls:'missing',  tag:'missing' }
+      ],
+      goodNote: '✓ 5 entries — 5.75 billable hrs — precise times — every client attributed correctly.',
+      badNote:  '✕ 1 vague entry — 5.00 hrs estimated — 2 tasks forgotten — 0.75 hrs of billable work lost.'
+    }
+  ];
+
+  let current = 0;
+
+  function renderEntries(tbodyId, entries, showTotal, totalHrs, isGood) {
+    const tbody = document.getElementById(tbodyId);
+    if (!entries || entries.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="4"><div class="empty-state">No entries yet — workday just started</div></td></tr>`;
+      return;
+    }
+    let html = '';
+    entries.forEach(e => {
+      let tagHtml = '';
+      if (e.tag === 'guessed') tagHtml = `<span class="status-tag tag-guessed">estimated</span>`;
+      if (e.tag === 'missing') tagHtml = `<span class="status-tag tag-missing">✕ forgotten</span>`;
+      if (!e.tag && isGood)    tagHtml = `<span class="status-tag tag-live">✓ live</span>`;
+      html += `<tr class="entry-row ${e.cls || ''}">
+        <td>${e.activity}${tagHtml}</td>
+        <td>${e.client}</td>
+        <td style="color:#888;">${e.time}</td>
+        <td>${e.hrs}</td>
+      </tr>`;
+    });
+    // Total row
+    if (showTotal) {
+      html += `<tr class="total-row">
+        <td colspan="3" style="text-align:right;color:#777;font-size:11px;">Day Total:</td>
+        <td style="font-size:13px;color:${isGood ? '#1a5a1a' : '#8a2020'};">${totalHrs}</td>
+      </tr>`;
+    }
+    tbody.innerHTML = html;
+  }
+
+  function applyStep(idx) {
+    const s = steps[idx];
+
+    // Instruction
+    document.getElementById('instHeader').className = 'inst-header ' + s.headerClass;
+    document.getElementById('instNum').textContent   = s.num;
+    document.getElementById('instTitle').textContent = s.title;
+    document.getElementById('instBody').innerHTML    = s.body + `<div class="inst-tip">${s.tip}</div>`;
+    document.getElementById('stepBadge').textContent = `Step ${idx+1} of ${steps.length}`;
+
+    // Times
+    document.getElementById('goodTime').textContent   = s.goodTime;
+    document.getElementById('goodStatus').textContent = s.goodStatus;
+    document.getElementById('badTime').textContent    = s.badTime;
+    document.getElementById('badStatus').textContent  = s.badStatus;
+
+    // Entries
+    const showTotals = idx >= 4;
+    renderEntries('goodEntries', s.goodEntries, showTotals, '5.75', true);
+    renderEntries('badEntries',  s.badEntries,  showTotals, '5.00', false);
+
+    // Notes
+    const gn = document.getElementById('goodNote');
+    const bn = document.getElementById('badNote');
+    if (s.goodNote) { gn.style.display = 'block'; gn.textContent = s.goodNote; gn.className = 'panel-note good'; }
+    else            { gn.style.display = 'none'; }
+    if (s.badNote)  { bn.style.display = 'block'; bn.textContent = s.badNote;  bn.className = 'panel-note bad'; }
+    else            { bn.style.display = 'none'; }
+
+    // Nav
+    document.getElementById('prevBtn').disabled = idx === 0;
+    const nextBtn = document.getElementById('nextBtn');
+    nextBtn.textContent = idx === steps.length - 1 ? 'Start Over ↺' : 'Next →';
+    nextBtn.onclick = idx === steps.length - 1 ? () => goToStep(0) : () => changeStep(1);
+
+    // Dots
+    document.querySelectorAll('.pdot').forEach((d, i) => {
+      d.className = 'pdot' + (i < idx ? ' done' : i === idx ? ' active' : '');
+    });
+  }
+
+  function changeStep(dir) {
+    const next = current + dir;
+    if (next < 0 || next >= steps.length) return;
+    current = next; applyStep(current);
+  }
+
+  function goToStep(idx) { current = idx; applyStep(current); }
+
+  applyStep(0);
+</script>
+</body>
+</html>
